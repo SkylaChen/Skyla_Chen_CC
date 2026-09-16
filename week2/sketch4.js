@@ -26,14 +26,20 @@ y += yV
  
  if(y > height - diameter/2){ 
     yV = -yV;
+    //diameter += 3;
+    diameter = random(50, 150)
  }
  if(y < diameter/2){
     yV = -yV;
+    //diameter += 10; //the ball will loss control
+    diameter = random(50, 150);
  }
  if(x > width - diameter/2){
     xV = -xV;
+       diameter = random(50, 150);
  }
  if(x < diameter/2){
     xV = -xV;
+    diameter = random(50, 150);
  }
 }
