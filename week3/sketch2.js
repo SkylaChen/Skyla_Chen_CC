@@ -84,6 +84,16 @@ rotate(-3*r)
 noStroke()
 fill(0,random(0, 100),200)
 ellipse(-80, 0, 30, 30)
+noStroke()
+fill(150, 100, 50)
+
+ellipse(150, 0, 20, 20) 
+
+translate(150, 0)       
+rotate(-10* r)
+fill(200, 220, 0)
+ellipse(-20, 0, 8, 8)   
+
 pop()
 
 // push()
@@ -98,6 +108,7 @@ rotate(-2.5*r)
 noStroke()
 fill(0,100,200)
 ellipse(120, 0, 20, 20)
+
 pop()
 
 // push()
@@ -112,6 +123,9 @@ noStroke()
 fill(175,121,110)
 rotate(0.5*r)
 ellipse(150, 0, 20, 20)
+
+
+
 pop()
 
 // push()
@@ -126,6 +140,10 @@ rotate(1*r)
 noStroke()
 fill(0,121,110)
 ellipse(220, 0, 25, 25)
+translate(220, 0)       
+rotate(8* r)
+fill(200, 20, 100)
+ellipse(-20, 0, 8, 8)   
 pop()
 
 // push()
