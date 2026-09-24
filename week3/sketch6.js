@@ -100,11 +100,26 @@ fill(0,100,200)
 ellipse(120, 0, 20, 20)
 pop()
 
+
 // push()
 // translate(lerpedMouseX, lerpedMouseY)
 // rotate(-3*r)
 // ellipse(0, 0, 240, 240)
 // pop()
+push()
+translate(lerpedMouseX, lerpedMouseY)
+rotate(1.2*r)
+
+noStroke()
+fill(150, 100, 50)
+ellipse(150, 0, 20, 20)  // 行星
+
+translate(150, 0)         // 把原点移到行星中心
+rotate(3 * r)
+fill(200, 220, 255)
+ellipse(-20, 0, 8, 8)    // 卫星
+
+pop()
 
 push()
 translate(lerpedMouseX, lerpedMouseY)
