@@ -1,82 +1,163 @@
-// let wavesPerCanvas = 8;
-// let amplitude=50;
-// let offset = 0;
-// let yLoc
-// let speed =0.01
-let numWaves=10
-
-function setup(){
-    createCanvas(windowWidth, windowHeight)
-   // yLoc=height/2
-    noFill()
+function setup() {
+  createCanvas(900, 900);
 }
 
-function draw(){
-    background(230)
-
-    // let v = floor(random(3,20))
-
-    // nShape(mouseX,mouseY,v,v*4)
-
-// for(let i = 0; i < numWaves;i++){
-//     let yLoc = map(i,0,numWaves,0.1)*height
-//     let speed
-//     if(i%2 == 0)
-        
-//   sinWave(i,20,height/i, i*0.05)
-
+function draw() {
+ // background(225);
   
-// }
-
-//    function sinWave(wavesPerCanvas,amplitude, yLoc, speed){
-   
-//     let offset = frameCount*speed
-
-//     push()
-//     translate(0,yLoc)
-
-//     beginShape()
-//     for(let i= 0; i<width; i++){
-
-//         mappedI = map(i,0,width,0,wavesPerCanvas*TWO_PI)
-//         let y= sin(mappedI-offset)*amplitude
-//         let x = i
-//         vertex(x,y)
-    
-    noiseWave(10,100,height/2.0.05)
-
-    // endShape()
-
-    // pop()
-   }
-    offset = frameCount*speed([speed]){
-
-    function nShape(yLoc,xLoc, numVertices,radius){
-        push()
-        translate(xLoc,yLoc)
-        beginShape()
-            for(let i= 0; i< numVertices;i++){
-                mappedI= map(i,0,numVertices,0,TWO_PI)
-            let x = sin(mappedI)*radius
-            let y = cos(mappedI)*radius
-                endShape(CLOSE)
-        }
-
-        pop()
-
-
-
-    }
-
-    function noiseWave(density,amplitude,yLoc,speed){
-        let offset =frameCount*speed
-        
-
-
-    }
-
-    function mousePressed(){
-
-        let v= floor(random(3.20))
-        nShape(mouseX,mouseY,v,v*4)
-    }
+  //右ツインテール
+  curve(1100, 1250, 700, 200, 780, 100, 1150, 900);
+  line(780,100,900,350);
+  line(700,200,850,900);
+  
+  //左ツインテール
+  line(247,500,200,850);
+  line(128,350,0,740);
+  
+  line(217,125,190,200);
+  
+//head
+  curve(400,320,300,80,610,45,900,400);
+  line(652,68,660,75);
+  line(660,75,680,95);
+  
+  //right decoration 
+  line(633,0,580,100);
+  line(580,100,700,200);
+  line(685,0,635,100);
+  line(635,100,685,140);
+  line(685,0,710,30);
+  line(665,40,680,55);
+  
+  beginShape(TESS);
+  vertex(650,0);
+  vertex(597,100);
+  vertex(695,180);
+  vertex(688,155);
+  vertex(620,100);
+  vertex(670,0);
+  endShape(CLOSE)
+ 
+  //髪飾り左
+  line(225,75,212,160);
+  line(225,75,250,70);
+  line(250,70,245,125);
+  line(250,70,300,80);
+  line(250,90,273,95);
+  
+  beginShape(TESS);
+  vertex(230,74);
+  vertex(220,150);
+  vertex(237,130);
+  vertex(243,71);
+  endShape(CLOSE)
+  
+  //衣领
+  curve(300,580,440,593,600,548,675,480);
+  line(590,545,607,540);
+  line(607,540,615,570);
+  line(440,593,490,740);
+  curve(360,800,490,740,615,570,600,450);
+  line(440,593,435,635);
+  line(435,593,435,635);
+  line(435,593,330,710);
+  line(433,588,435,593);
+  line(433,588,456,580);
+  curve(370,650,345,640,330,710,380,880);
+  curve(300,655,345,640,433,588,450,530);
+  line(490,695,500,720);
+  line(500,720,525,695);
+  line(515,675,525,695);
+  line(490,695,515,675);
+  
+  
+  //hair
+  curve(500,750,130,450,300,80,750,150);
+  curve(200,180,300,80,350,100,380,180);
+  curve(200,800,130,450,250,200,300,250);
+  curve(500,10,210,255,320,610,800,650);
+  curve(250,300,300,410,320,610,300,800);
+  curve(350,100,300,200,280,360,380,380);
+  curve(350,0,290,165,430,390,700,450);
+  curve(350,100,350,200,430,390,550,450);
+  curve(150,150,350,200,570,455,655,650);
+  curve(450,0,550,100,570,455,430,800);
+  curve(450,140,485,105,550,100,650,160);
+  curve(570,250,570,455,530,580,450,650);
+  curve(525,300,540,413,530,580,500,600);
+  curve(600,300,570,455,680,580,820,600);
+  curve(630,400,620,475,680,580,750,600);
+  curve(690,100,720,300,620,475,450,530);
+  
+  //
+  curve(260,400,304,425,320,475,310,480);
+  curve(340,310,320,475,385,545,450,570);
+  curve(330,518,385,545,425,560,480,590);
+  curve(200,600,425,560,525,510,600,440);
+  
+  //neck
+  curve(420,500,455,550,455,590,430,650);
+  curve(600,450,590,495,590,550,610,600);
+  
+  //领带
+  line(385,652,390,680);
+  line(390,680,425,690);
+  line(425,690,460,660);
+  line(393,682,270,900);
+  line(422,689,350,900);
+  curve(350,675,400,632,457,643,500,690);
+  
+  //衣服
+  curve(360,675,255,800,250,900,300,800);
+  curve(400,600,330,710,255,800,200,1000);
+  curve(600,550,515,717,570,900,700,950);
+  curve(600,600,612,580,620,590,610,610);
+  curve(600,600,620,590,645,605,630,650);
+  
+  beginShape(TESS)
+  vertex(410,810);
+  vertex(405,830);
+  vertex(475,835);
+  vertex(480,815);
+  endShape(CLOSE)
+  
+  //右腕
+  curve(550,935,575,640,700,640,765,975);
+  curve(625,600,700,640,720,750,675,800);
+  curve(765,400,720,750,700,880,700,1000);
+  curve(500,675,560,725,590,890,600,900);
+  
+  //左腕
+  curve(390,600,343,643,300,660,225,665);    
+  curve(400,675,300,660,240,710,250,900);
+  curve(240,600,240,710,200,850,180,900);
+  
+  //鼻
+  line(380,425,378,450);
+  line(378,450,383,455);
+  
+  //眉
+  curve(250,310,280,300,320,320,350,350);
+  curve(365,345,388,285,415,260,470,230);
+  
+  //嘴巴
+  curve(300,480,390,505,445,495,500,430);
+  
+    //左目
+curve(750,800,315,430,340,370,600,700);
+  curve(420,450,420,340,450,300,470,300);
+  
+translate (325,390)
+  rotate(radians(330))
+  ellipse(0,0,45,70)
+  ellipse(4,-5,35,55)
+  ellipse(3,-28,12,12)
+  
+  //右目
+  rotate(radians(15))
+  translate(150,0)
+  ellipse(0,0,60,90)
+  ellipse(-5,-5,45,65)
+  ellipse(-15,-25,12,12)
+  
+}
