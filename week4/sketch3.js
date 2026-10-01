@@ -1,9 +1,12 @@
+let exportSvg = false;
+
 function setup() {
   createCanvas(900, 900);
 }
 
 function draw() {
  // background(225);
+  if (exportSvg) beginRecordSvg("portrait.svg");
   
   //右ツインテール
   curve(1100, 1250, 700, 200, 780, 100, 1150, 900);
@@ -29,7 +32,7 @@ function draw() {
   line(685,0,710,30);
   line(665,40,680,55);
   
-  beginShape(TESS);
+  beginShape();
   vertex(650,0);
   vertex(597,100);
   vertex(695,180);
@@ -45,7 +48,7 @@ function draw() {
   line(250,70,300,80);
   line(250,90,273,95);
   
-  beginShape(TESS);
+  beginShape();
   vertex(230,74);
   vertex(220,150);
   vertex(237,130);
@@ -114,7 +117,7 @@ function draw() {
   curve(600,600,612,580,620,590,610,610);
   curve(600,600,620,590,645,605,630,650);
   
-  beginShape(TESS)
+  beginShape();
   vertex(410,810);
   vertex(405,830);
   vertex(475,835);
@@ -160,4 +163,14 @@ translate (325,390)
   ellipse(-5,-5,45,65)
   ellipse(-15,-25,12,12)
   
+  if (exportSvg) {
+    endRecordSvg();
+    exportSvg = false;
+  }
+}
+
+function keyPressed() {
+  if (key === "s" || key === "S") {
+    exportSvg = true;
+  }
 }
