@@ -55,8 +55,6 @@
 // //   xV = -7.5;
 // // }
 
-// 老师
-//animated sprites
 
 let frames = []
 
