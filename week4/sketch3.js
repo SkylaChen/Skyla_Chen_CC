@@ -8,7 +8,7 @@ function draw() {
  // background(225);
   if (exportSvg) beginRecordSvg("portrait.svg");
   
-  //右ツインテール
+  //
   curve(1100, 1250, 700, 200, 780, 100, 1150, 900);
   line(780,100,900,350);
   line(700,200,850,900);
