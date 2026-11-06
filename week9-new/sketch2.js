@@ -210,7 +210,7 @@ function updateEyes(points) {
   eyesClosed = openness < (eyesClosed ? 0.86 : BLINK_THRESHOLD);
   if (eyesClosed) avatar.blinkUntil = millis() + 65;
   if (eyesClosed || millis() < avatar.blinkUntil) avatar.eyeOpen = 0;
-  else avatar.eyeOpen = openness < 0.94 ? 0.5 : 1;
+  else avatar.eyeOpen = openness < 0.88 ? 0.5 : 1;
 }
 
 function getEyeOpenRatio(points) {
