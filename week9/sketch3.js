@@ -10,7 +10,7 @@ let artError = false;
 let artwork;
 let avatarImages = {};
 
-const ART_PATH = "assets/avatar/";
+const ART_PATH = "assets/avatar-half/";
 const RENDER_SCALE = 0.5; // Half width/height, one quarter of the canvas pixels.
 const MIRROR_TRACKING = true;
 const BLINK_THRESHOLD = 0.76; // Fraction of your normal open-eye height.
@@ -69,11 +69,14 @@ async function setup() {
     );
     avatar.x = artwork.anchor.x;
     avatar.y = artwork.anchor.y;
-    await Promise.all(Object.entries(artwork.layers).map(async ([name, layer]) => {
+    // Load sequentially to limit simultaneous image decoding on phones.
+    for (const [name, layer] of Object.entries(artwork.layers)) {
       avatarImages[name] = await loadImage(ART_PATH + layer.file);
-    }));
+    }
   } catch (error) {
     console.error("Could not load avatar artwork:", error);
+    const status = document.getElementById("avatar-load-status");
+    if (status) status.textContent = "角色图片加载失败：" + error.message;
     artError = true;
     return;
   }
@@ -123,7 +126,15 @@ function draw() {
   if (points && points.length >= 468) updateAvatar(points);
 
   // Keep the portrait visible while the model loads or the face leaves the camera.
-  drawAvatar();
+  try {
+    drawAvatar();
+    const status = document.getElementById("avatar-load-status");
+    if (status) status.textContent = "角色已绘制 · 1460 × 1594 · 手机轻量图层";
+  } catch (error) {
+    const status = document.getElementById("avatar-load-status");
+    if (status) status.textContent = "角色绘制失败：" + error.message;
+    console.error(error);
+  }
   drawStatus();
   drawHandPreview();
 }
