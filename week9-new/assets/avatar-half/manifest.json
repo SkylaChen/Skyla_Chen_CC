@@ -1,0 +1,120 @@
+{
+  "canvas": {
+    "width": 2920,
+    "height": 3188
+  },
+  "anchor": {
+    "x": 1470,
+    "y": 1200
+  },
+  "headPivot": {
+    "x": 1470,
+    "y": 1780
+  },
+  "layers": {
+    "backHair": {
+      "file": "backHair.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "后发"
+    },
+    "neck": {
+      "file": "neck.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "脖子"
+    },
+    "body": {
+      "file": "body.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "衣服"
+    },
+    "face": {
+      "file": "face.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "脸（无五官）"
+    },
+    "frontHair": {
+      "file": "frontHair.png",
+      "x": 910,
+      "y": 359,
+      "width": 1161,
+      "height": 1206,
+      "sourceLayer": "图层 18（前发）"
+    },
+    "eyesOpen": {
+      "file": "eyesOpen.png",
+      "x": 987,
+      "y": 1053,
+      "width": 921,
+      "height": 247,
+      "sourceLayer": "眼睛 / 第 1 层 图层 17"
+    },
+    "eyesClosed": {
+      "file": "eyesClosed.png",
+      "x": 1038,
+      "y": 1050,
+      "width": 849,
+      "height": 226,
+      "sourceLayer": "眼睛 / 第 2 层 图层 13"
+    },
+    "eyesHalf": {
+      "file": "eyesHalf.png",
+      "x": 1011,
+      "y": 1061,
+      "width": 873,
+      "height": 214,
+      "sourceLayer": "眼睛 / 第 3 层 图层 17"
+    },
+    "mouthRelaxed": {
+      "file": "mouthRelaxed.png",
+      "x": 1363,
+      "y": 1587,
+      "width": 218,
+      "height": 66,
+      "sourceLayer": "嘴巴 / 图层 8"
+    },
+    "mouthOpen": {
+      "file": "mouthOpen.png",
+      "x": 1357,
+      "y": 1580,
+      "width": 215,
+      "height": 87,
+      "sourceLayer": "嘴巴 / 图层 9"
+    },
+    "mouthClosed": {
+      "file": "mouthClosed.png",
+      "x": 1392,
+      "y": 1604,
+      "width": 146,
+      "height": 48,
+      "sourceLayer": "嘴巴 / 图层 3"
+    },
+    "mouthRound": {
+      "file": "mouthRound.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "嘴巴 / 图层 10"
+    },
+    "mouthWide": {
+      "file": "mouthWide.png",
+      "x": 0,
+      "y": 0,
+      "width": 2920,
+      "height": 3188,
+      "sourceLayer": "嘴巴 / 图层 11"
+    }
+  }
+}

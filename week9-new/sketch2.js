@@ -10,7 +10,8 @@ let artError = false;
 let artwork;
 let avatarImages = {};
 
-const ART_PATH = "assets/avatar/";
+const ART_PATH = "assets/avatar-half/";
+const RENDER_SCALE = 0.5;
 const MIRROR_TRACKING = true;
 const BLINK_THRESHOLD = 0.76; // Fraction of your normal open-eye height.
 let eyeBaseline = null;
@@ -53,20 +54,22 @@ let avatar = {
 
 async function setup() {
   pixelDensity(1);
-  const canvas = createCanvas(2920, 3188);
-  // Keep native rendering resolution; CSS fits only the displayed canvas.
+  const canvas = createCanvas(1460, 1594);
+  // Render at half resolution; CSS fits the display to the screen.
   canvas.parent("avatar-stage");
   textAlign(CENTER, CENTER);
   textFont("Arial");
 
   try {
     artwork = await loadJSON(ART_PATH + "manifest.json");
-    resizeCanvas(artwork.canvas.width, artwork.canvas.height);
+    resizeCanvas(Math.round(artwork.canvas.width * RENDER_SCALE),
+      Math.round(artwork.canvas.height * RENDER_SCALE));
     avatar.x = artwork.anchor.x;
     avatar.y = artwork.anchor.y;
-    await Promise.all(Object.entries(artwork.layers).map(async ([name, layer]) => {
+    // Decode one image at a time to reduce peak memory on phones.
+    for (const [name, layer] of Object.entries(artwork.layers)) {
       avatarImages[name] = await loadImage(ART_PATH + layer.file);
-    }));
+    }
   } catch (error) {
     console.error("Could not load avatar artwork:", error);
     artError = true;
@@ -128,8 +131,8 @@ function updateAvatar(points) {
   );
 
   const cameraX = MIRROR_TRACKING ? video.width - bounds.centerX : bounds.centerX;
-  const targetX = artwork.anchor.x + (cameraX / video.width - 0.5) * width * 0.35;
-  const targetY = artwork.anchor.y + (bounds.centerY / video.height - 0.5) * height * 0.25;
+  const targetX = artwork.anchor.x + (cameraX / video.width - 0.5) * artwork.canvas.width * 0.35;
+  const targetY = artwork.anchor.y + (bounds.centerY / video.height - 0.5) * artwork.canvas.height * 0.25;
   const targetAngle = MIRROR_TRACKING ? -eyeLineAngle : eyeLineAngle;
   const targetScale = constrain(bounds.width / 190, 0.9, 1.12);
 
@@ -279,8 +282,10 @@ function getMouthLayer() {
 
 function drawAvatar() {
   push();
+  // Keep original PSD coordinates while drawing into the smaller canvas.
+  scale(RENDER_SCALE);
   translate(avatar.x, avatar.y);
-  // Preserve native layer resolution at the neutral pose.
+  // Apply camera-distance zoom after resolution scaling.
   scale(avatar.scale);
   translate(-artwork.anchor.x, -artwork.anchor.y);
 
