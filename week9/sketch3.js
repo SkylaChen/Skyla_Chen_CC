@@ -11,6 +11,7 @@ let artwork;
 let avatarImages = {};
 
 const ART_PATH = "assets/avatar/";
+const RENDER_SCALE = 0.5; // Half width/height, one quarter of the canvas pixels.
 const MIRROR_TRACKING = true;
 const BLINK_THRESHOLD = 0.76; // Fraction of your normal open-eye height.
 let eyeBaseline = null;
@@ -54,15 +55,18 @@ let avatar = {
 
 async function setup() {
   pixelDensity(1);
-  const canvas = createCanvas(2920, 3188);
-  // Keep native rendering resolution; CSS fits only the displayed canvas.
+  const canvas = createCanvas(1460, 1594);
+  // CSS still fits the display to the screen independently of render resolution.
   canvas.parent("avatar-stage");
   textAlign(CENTER, CENTER);
   textFont("Arial");
 
   try {
     artwork = await loadJSON(ART_PATH + "manifest.json");
-    resizeCanvas(artwork.canvas.width, artwork.canvas.height);
+    resizeCanvas(
+      Math.round(artwork.canvas.width * RENDER_SCALE),
+      Math.round(artwork.canvas.height * RENDER_SCALE)
+    );
     avatar.x = artwork.anchor.x;
     avatar.y = artwork.anchor.y;
     await Promise.all(Object.entries(artwork.layers).map(async ([name, layer]) => {
@@ -132,8 +136,8 @@ function updateAvatar(points) {
   );
 
   const cameraX = MIRROR_TRACKING ? video.width - bounds.centerX : bounds.centerX;
-  const targetX = artwork.anchor.x + (cameraX / video.width - 0.5) * width * 0.35;
-  const targetY = artwork.anchor.y + (bounds.centerY / video.height - 0.5) * height * 0.25;
+  const targetX = artwork.anchor.x + (cameraX / video.width - 0.5) * artwork.canvas.width * 0.35;
+  const targetY = artwork.anchor.y + (bounds.centerY / video.height - 0.5) * artwork.canvas.height * 0.25;
   const targetAngle = MIRROR_TRACKING ? -eyeLineAngle : eyeLineAngle;
   // Amplify camera distance changes while keeping the zoom within useful limits.
   const distanceRatio = bounds.width / 150;
@@ -285,8 +289,10 @@ function getMouthLayer() {
 
 function drawAvatar() {
   push();
+  // Keep all artwork/tracking coordinates in original PSD units.
+  scale(RENDER_SCALE);
   translate(avatar.x, avatar.y);
-  // Preserve native layer resolution at the neutral pose.
+  // Apply the existing camera-distance zoom within the reduced canvas.
   scale(avatar.scale);
   translate(-artwork.anchor.x, -artwork.anchor.y);
 
