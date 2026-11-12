@@ -1,37 +1,53 @@
-// Week 9 — FaceMesh + your PSD artwork
-// manifest.json keeps each PNG's size and position on the original PSD canvas.
-
 let video;
-let faceMesh;
 let faces = [];
 let modelReady = false;
 let loadError = false;
 let artError = false;
 let artwork;
 let avatarImages = {};
+let pupilBuffer;
+let pupilCache = { x: null, y: null };
+let gaze = { x: 0, y: 0 };
+const props = { microphone: { raised: false, progress: 0, time: null } };
+const microphone = props.microphone;
+const HAIR_DAMPING = 18; // 越大越快收稳，不产生弹簧回弹。
+let hairMotion = { angle: 0, time: null, rootX: null };
 
-const ART_PATH = "assets/avatar-half/";
-const RENDER_SCALE = 0.5; // Half width/height, one quarter of the canvas pixels.
+const ART_PATH = "assets/avatar-half-v2/";
+const RENDER_SCALE = 0.5;
 const MIRROR_TRACKING = true;
-const BLINK_THRESHOLD = 0.76; // Fraction of your normal open-eye height.
+const BLINK_THRESHOLD = 0.76;
 let eyeBaseline = null;
 let eyeSamples = [];
 let eyesClosed = false;
 
-// Measure a neutral, closed mouth for each person instead of assuming one shape.
-let mouthBaseline = null;
-let mouthSamples = [];
-function resetMouthCalibration() {
-  mouthBaseline = null;
-  mouthSamples = [];
-  avatar.mouthOpen = 0;
-  avatar.smiling = false;
-  avatar.mouthLayer = "mouthClosed";
+let browBaseline = null;
+let browSamples = [];
+let browExpression = "browsNeutral";
+let browCandidate = "browsNeutral";
+let browCandidateFrames = 0;
+let browCalibrationStart = null;
+function resetBrowCalibration() {
+  browCalibrationStart = null;
+  browBaseline = null;
+  browSamples = [];
+  browExpression = "browsNeutral";
+  browCandidate = "browsNeutral";
+  browCandidateFrames = 0;
 }
+const MOUTH = { gain: 2.6, filterMs: 24, confirmMs: 25, holdMs: 100, bridgeMs: 100 };
+let mouth;
+function resetMouthCalibration() {
+  mouth = { baseline: null, samples: [], started: null, filtered: null, lastInput: null,
+    smiling: false, candidate: "mouthClosed", candidateAt: 0, target: "mouthClosed",
+    shownAt: -Infinity, bridgeUntil: 0 };
+}
+resetMouthCalibration();
 function keyPressed() {
-  if (key === "h" || key === "H") handPanel.hidden = !handPanel.hidden;
-  if (key === "c" || key === "C") {
+  if (key.toLowerCase() === "h" && handPanel) handPanel.hidden = !handPanel.hidden;
+  if (key.toLowerCase() === "c") {
     resetMouthCalibration();
+    resetBrowCalibration();
     eyeBaseline = null;
     eyeSamples = [];
     eyesClosed = false;
@@ -46,20 +62,15 @@ let avatar = {
   scale: 1,
   angle: 0,
   eyeOpen: 1,
-  mouthOpen: 0,
-  smiling: false,
-  mouthWidth: 1,
   mouthLayer: "mouthClosed",
   blinkUntil: 0
 };
 
+// 图层保留 PSD 坐标；只缩小渲染，逐张加载以降低内存峰值。
 async function setup() {
   pixelDensity(1);
   const canvas = createCanvas(1460, 1594);
-  // CSS still fits the display to the screen independently of render resolution.
   canvas.parent("avatar-stage");
-  textAlign(CENTER, CENTER);
-  textFont("Arial");
 
   try {
     artwork = await loadJSON(ART_PATH + "manifest.json");
@@ -69,73 +80,69 @@ async function setup() {
     );
     avatar.x = artwork.anchor.x;
     avatar.y = artwork.anchor.y;
-    // Load sequentially to limit simultaneous image decoding on phones.
     for (const [name, layer] of Object.entries(artwork.layers)) {
       avatarImages[name] = await loadImage(ART_PATH + layer.file);
     }
+    const eye = artwork.layers.eyeWhite;
+    pupilBuffer = createGraphics(Math.ceil(eye.width * RENDER_SCALE), Math.ceil(eye.height * RENDER_SCALE));
+    pupilBuffer.pixelDensity(1);
   } catch (error) {
     console.error("Could not load avatar artwork:", error);
-    const status = document.getElementById("avatar-load-status");
-    if (status) status.textContent = "角色图片加载失败：" + error.message;
+    setStatus("素材加载失败：" + error.message);
     artError = true;
     return;
   }
 
   video = createCapture(VIDEO);
-  // Keep face tracking lightweight while the artwork renders at a higher resolution.
   video.size(640, 480);
   video.hide();
   createHandPanel();
-  startFaceTracking();
-  startHandTracking();
+  startTracking("faceMesh", { maxFaces: 1, refineLandmarks: true }, gotFaces);
+  startTracking("handPose", { maxHands: 2 }, gotHands);
 }
 
-async function startFaceTracking() {
+async function startTracking(kind, options, callback) {
   try {
-    faceMesh = await ml5.faceMesh();
-    faceMesh.detectStart(video, gotFaces);
-    modelReady = true;
+    const model = await ml5[kind](options);
+    model.detectStart(video, callback);
+    if (kind === "faceMesh") modelReady = true;
+    else handReady = true;
   } catch (error) {
-    console.error("Could not load FaceMesh:", error);
-    loadError = true;
+    console.error(kind, error);
+    if (kind === "faceMesh") loadError = true;
+    else handError = true;
   }
 }
 
+// 表情每次使用新的检测结果更新，避免绘图帧重复参与校准。
 function gotFaces(results) {
   faces = results;
   const points = results[0]?.keypoints;
   if (points && points.length >= 468) {
     updateEyes(points);
+    updateBrows(points);
+    updateGaze(points);
     updateMouth(points);
   }
 }
 
 function draw() {
   background(248, 246, 250);
-
-  if (artError) {
-    drawMessage("Artwork could not load. Open week9.html with Live Preview.");
-    return;
-  }
-  if (!artwork || !avatarImages.frontHair) {
-    drawMessage("Loading your artwork...");
-    return;
-  }
-
+  if (artError) return;
+  if (!artwork || !avatarImages.frontHair) return setStatus("加载立绘…");
   const points = faces[0]?.keypoints;
-  if (points && points.length >= 468) updateAvatar(points);
-
-  // Keep the portrait visible while the model loads or the face leaves the camera.
+  if (points?.length >= 468) updateAvatar(points);
   try {
+    advanceMouth(millis());
+    updateHairPhysics();
+    updateMicrophone();
     drawAvatar();
-    const status = document.getElementById("avatar-load-status");
-    if (status) status.textContent = "角色已绘制 · 1460 × 1594 · 手机轻量图层";
+    setStatus(loadError ? "人脸追踪加载失败" : !modelReady ? "加载人脸追踪…"
+      : !points?.length ? "请面对摄像头" : !mouth.baseline || !browBaseline ? "请放松表情，自动校准中…" : "");
   } catch (error) {
-    const status = document.getElementById("avatar-load-status");
-    if (status) status.textContent = "角色绘制失败：" + error.message;
+    setStatus("绘制失败：" + error.message);
     console.error(error);
   }
-  drawStatus();
   drawHandPreview();
 }
 
@@ -150,7 +157,6 @@ function updateAvatar(points) {
   const targetX = artwork.anchor.x + (cameraX / video.width - 0.5) * artwork.canvas.width * 0.35;
   const targetY = artwork.anchor.y + (bounds.centerY / video.height - 0.5) * artwork.canvas.height * 0.25;
   const targetAngle = MIRROR_TRACKING ? -eyeLineAngle : eyeLineAngle;
-  // Amplify camera distance changes while keeping the zoom within useful limits.
   const distanceRatio = bounds.width / 150;
   const targetScale = constrain(Math.pow(distanceRatio, 1.35), 0.80, 1.80);
 
@@ -160,39 +166,77 @@ function updateAvatar(points) {
   avatar.angle = lerp(avatar.angle, constrain(targetAngle, -0.35, 0.35), 0.2);
 
 }
-
-// Run once per new camera inference, not once per canvas redraw.
+// 只使用新检测帧采样，统一用眼距归一化，避免张嘴变宽时冲淡开合量。
+function measureMouth(points) {
+  const left = points[61], right = points[291], upper = points[13];
+  const width = Math.max(pointDistance(left, right), 1);
+  const eyeSpan = Math.max(pointDistance(points[33], points[263]), 1);
+  let nx = -(right.y - left.y) / width, ny = (right.x - left.x) / width;
+  if (nx * (points[152].x - points[10].x) + ny * (points[152].y - points[10].y) < 0) {
+    nx = -nx; ny = -ny;
+  }
+  return {
+    gap: pointDistance(upper, points[14]) / eyeSpan,
+    width: width / eyeSpan,
+    lift: ((upper.x - (left.x + right.x) / 2) * nx
+      + (upper.y - (left.y + right.y) / 2) * ny) / eyeSpan
+  };
+}
 function updateMouth(points) {
-  const mouthRatio = getMouthOpenRatio(points);
-  const smile = getSmileMetrics(points);
-  if (!mouthBaseline) {
-    mouthSamples.push({ open: mouthRatio, lift: smile.lift, width: smile.width });
-    if (mouthSamples.length >= 30) {
-      const median = field => {
-        const values = mouthSamples.map(sample => sample[field]).sort((a, b) => a - b);
-        return (values[14] + values[15]) / 2;
-      };
-      mouthBaseline = { open: median("open"), lift: median("lift"), width: median("width") };
+  const now = millis(), raw = measureMouth(points);
+  if (!Object.values(raw).every(Number.isFinite)) return;
+  if (!mouth.baseline) {
+    if (mouth.started === null) mouth.started = now;
+    mouth.samples.push(raw);
+    if (now - mouth.started >= 800 && mouth.samples.length >= 15) {
+      const gaps = mouth.samples.map(sample => sample.gap).sort((a, b) => a - b);
+      mouth.baseline = { gap: gaps[Math.floor(gaps.length * 0.2)],
+        width: median(mouth.samples, "width"), lift: median(mouth.samples, "lift") };
+      mouth.samples = [];
     }
-    avatar.mouthOpen = 0;
-    avatar.smiling = false;
-    avatar.mouthLayer = "mouthClosed";
     return;
   }
-  const opening = Math.max(0, mouthRatio - mouthBaseline.open);
-  // Quick attack/release keeps short spoken syllables visible.
-  avatar.mouthOpen = lerp(avatar.mouthOpen, opening, 0.85);
-  const lift = smile.lift - mouthBaseline.lift;
-  const widening = smile.width / Math.max(mouthBaseline.width, 0.01);
-  // A slight corner lift and widening can identify a closed-lip smile.
-  const smilingNow = avatar.smiling
-    ? (lift > 0.004 && widening > 1.01) || lift > 0.014
-    : (lift > 0.009 && widening > 1.025) || lift > 0.022;
-  avatar.smiling = smilingNow;
-  avatar.mouthWidth = widening;
-  avatar.mouthLayer = classifyMouth(
-    avatar.mouthOpen, widening, avatar.smiling, avatar.mouthLayer
-  );
+  const base = mouth.baseline;
+  if (raw.gap < base.gap) base.gap += (raw.gap - base.gap) * 0.2;
+  const current = {
+    gap: Math.max(0, raw.gap - base.gap) / base.width * MOUTH.gain,
+    width: raw.width / base.width,
+    lift: (raw.lift - base.lift) / base.width
+  };
+  const dt = mouth.lastInput === null ? 33 : now - mouth.lastInput;
+  const alpha = 1 - Math.exp(-Math.max(dt, 1) / MOUTH.filterMs);
+  if (!mouth.filtered || dt > 250) mouth.filtered = current;
+  else for (const key of Object.keys(current)) mouth.filtered[key] += (current[key] - mouth.filtered[key]) * alpha;
+  mouth.lastInput = now;
+  const { gap, width, lift } = mouth.filtered;
+  mouth.smiling = width > (mouth.smiling ? 1.02 : 1.045)
+    && lift > (mouth.smiling ? 0.004 : 0.009);
+  const next = classifyMouth(gap, width, mouth.smiling, mouth.target);
+  if (next !== mouth.candidate) { mouth.candidate = next; mouth.candidateAt = now; }
+  if (now - mouth.candidateAt >= MOUTH.confirmMs) mouth.target = next;
+}
+// 露齿笑专用 Open；说话用 Wide，收圆用 Round；中间状态只用闭嘴。
+function classifyMouth(gap, width, smiling, previous) {
+  if (smiling) {
+    if (gap < 0.018) return "mouthRelaxed";
+    return gap > (previous === "mouthOpen" ? 0.022 : 0.035) ? "mouthOpen" : "mouthClosed";
+  }
+  const round = gap > (previous === "mouthRound" ? 0.050 : 0.075)
+    && width < (previous === "mouthRound" ? 0.985 : 0.95);
+  if (round || (gap > 0.24 && width < 1.04)) return "mouthRound";
+  if (gap > (previous === "mouthWide" ? 0.040 : 0.065)) return "mouthWide";
+  return "mouthClosed";
+}
+// 显示状态与识别状态分离：不排队，最短停留防闪动，大嘴型之间强制闭嘴。
+function advanceMouth(now) {
+  if (!mouth.baseline) { avatar.mouthLayer = "mouthClosed"; return; }
+  if (mouth.lastInput !== null && now - mouth.lastInput > 400) mouth.target = "mouthClosed";
+  const current = avatar.mouthLayer, next = mouth.target;
+  if (now < mouth.bridgeUntil || current === next || now - mouth.shownAt < MOUTH.holdMs) return;
+  const large = name => ["mouthOpen", "mouthWide", "mouthRound"].includes(name);
+  avatar.mouthLayer = large(current) && large(next) ? "mouthClosed" : next;
+  mouth.shownAt = now;
+  if (large(current) && large(next)) mouth.bridgeUntil = now + MOUTH.bridgeMs;
 }
 
 function getFaceBounds(points) {
@@ -214,8 +258,7 @@ function getFaceBounds(points) {
     centerY: (minY + maxY) / 2
   };
 }
-
-// Use fresh inference frames and a personal open-eye baseline.
+// 根据自然睁眼幅度归一化，短暂保留眨眼以便看清。
 function updateEyes(points) {
   const ratio = getEyeOpenRatio(points);
   if (!Number.isFinite(ratio) || ratio <= 0) return;
@@ -232,93 +275,35 @@ function updateEyes(points) {
 }
 
 function getEyeOpenRatio(points) {
-  const leftHeight = dist(points[159].x, points[159].y, points[145].x, points[145].y);
-  const leftWidth = dist(points[33].x, points[33].y, points[133].x, points[133].y);
-  const rightHeight = dist(points[386].x, points[386].y, points[374].x, points[374].y);
-  const rightWidth = dist(points[263].x, points[263].y, points[362].x, points[362].y);
-  return (leftHeight / leftWidth + rightHeight / rightWidth) / 2;
+  return [[159,145,33,133], [386,374,263,362]].reduce((sum, ids) => {
+    const [top, bottom, left, right] = ids.map(id => points[id]);
+    return sum + pointDistance(top, bottom) / pointDistance(left, right);
+  }, 0) / 2;
 }
 
-function getMouthOpenRatio(points) {
-  const mouthHeight = dist(points[13].x, points[13].y, points[14].x, points[14].y);
-  const mouthWidth = dist(points[61].x, points[61].y, points[291].x, points[291].y);
-  return mouthHeight / Math.max(mouthWidth, 1);
-}
-
-function getSmileMetrics(points) {
-  const left = points[61];
-  const right = points[291];
-  const upper = points[13];
-  const lower = points[14];
-  const mouthWidth = Math.max(Math.hypot(right.x - left.x, right.y - left.y), 1);
-  const eyeWidth = Math.max(Math.hypot(
-    points[263].x - points[33].x, points[263].y - points[33].y
-  ), 1);
-  // Project onto the face's vertical axis so a head tilt isn't read as a smile.
-  let normalX = -(right.y - left.y) / mouthWidth;
-  let normalY = (right.x - left.x) / mouthWidth;
-  const forehead = points[10];
-  const chin = points[152];
-  if (normalX * (chin.x - forehead.x) + normalY * (chin.y - forehead.y) < 0) {
-    normalX = -normalX;
-    normalY = -normalY;
-  }
-  const offsetX = (upper.x + lower.x - left.x - right.x) / 2;
-  const offsetY = (upper.y + lower.y - left.y - right.y) / 2;
-  return {
-    lift: (offsetX * normalX + offsetY * normalY) / mouthWidth,
-    width: mouthWidth / eyeWidth
-  };
-}
-
-// FaceMesh measures lip geometry; an open smile approximates a toothy smile.
-function classifyMouth(opening, widening, smiling, previous) {
-  // An O-shaped mouth takes priority over a lingering smile detection.
-  const roundOpening = previous === "mouthRound" ? 0.060 : 0.085;
-  const roundWidth = previous === "mouthRound" ? 1.07 : 1.02;
-  const rounded = opening > roundOpening && widening < roundWidth;
-  const tallOpening = opening > (previous === "mouthRound" ? 0.25 : 0.30)
-    && widening < 1.12;
-  if (rounded || tallOpening) return "mouthRound";
-  if (smiling) {
-    // Closed-lip smile and parted-lip smile must use different drawings.
-    const parted = previous === "mouthOpen" ? 0.018 : 0.030;
-    if (opening <= parted) return "mouthRelaxed";
-    if (opening > 0.24) return "mouthWide";
-    return "mouthOpen";
-  }
-  // Hysteresis suppresses jitter without holding speech frames for a fixed time.
-  const wasOpen = previous !== "mouthClosed" && previous !== "mouthRelaxed";
-  if (opening < (wasOpen ? 0.020 : 0.035)) return "mouthClosed";
-  if (opening > (previous === "mouthWide" ? 0.095 : 0.12)) return "mouthWide";
-  return "mouthOpen";
-}
-
-function getMouthLayer() {
-  return avatar.mouthLayer;
-}
-
+// 缩放整个 PSD 坐标系；后发先画，后脑遮住发根连接处。
 function drawAvatar() {
   push();
-  // Keep all artwork/tracking coordinates in original PSD units.
   scale(RENDER_SCALE);
   translate(avatar.x, avatar.y);
-  // Apply the existing camera-distance zoom within the reduced canvas.
   scale(avatar.scale);
   translate(-artwork.anchor.x, -artwork.anchor.y);
 
-  drawArtLayer("backHair", true);
-  drawArtLayer("neck");
-  drawArtLayer("body");
-  drawArtLayer("face", true);
+  drawGravityHair();
+  for (const name of ["headBack", "neck", "body", "face"]) {
+    drawArtLayer(name, name === "headBack" || name === "face");
+  }
 
   const eyes = avatar.eyeOpen < 0.22 ? "eyesClosed"
     : avatar.eyeOpen < 0.75 ? "eyesHalf" : "eyesOpen";
+  if (eyes !== "eyesClosed") drawPupils();
   drawArtLayer(eyes, true);
 
-  drawArtLayer(getMouthLayer(), true);
+  drawArtLayer(avatar.mouthLayer, true);
 
   drawArtLayer("frontHair", true);
+  drawArtLayer(browExpression, true);
+  drawMicrophone();
   pop();
 }
 
@@ -326,61 +311,26 @@ function drawArtLayer(name, followsHead = false) {
   const layer = artwork.layers[name];
   push();
   if (followsHead) {
-    const pivot = artwork.headPivot;
-    translate(pivot.x, pivot.y);
-    rotate(avatar.angle);
-    translate(-pivot.x, -pivot.y);
+    rotateHead();
   }
-  // All hair uses the same head angle. No inertia is applied.
   image(avatarImages[name], layer.x, layer.y, layer.width, layer.height);
   pop();
 }
 
-function drawMessage(message) {
-  fill(77, 70, 88);
-  noStroke();
-  textSize(14);
-  text(message, width / 2, height / 2);
+function setStatus(message) {
+  const element = document.getElementById("avatar-load-status");
+  if (!element) return;
+  if (element.textContent !== message) element.textContent = message;
+  element.hidden = !message;
 }
-
-function drawStatus() {
-  let message = "Face tracking active";
-  if (loadError) message = "FaceMesh could not load. Check the browser console.";
-  else if (!modelReady) message = "Loading FaceMesh...";
-  else if (!faces[0]?.keypoints) message = "Show your face to the camera.";
-  else if (!mouthBaseline) message = "Calibrating: eyes open, face relaxed, lips closed...";
-  else message = "Face tracking active — press C with eyes open and lips closed to recalibrate.";
-
-  noStroke();
-  fill(248, 246, 250, 230);
-  rect(0, height - 27, width, 27);
-  fill(77, 70, 88);
-  textSize(12);
-  text(message, width / 2, height - 14);
-}
-
-
-// Hand experiment: shares the existing webcam; sketch2 stays independent.
-let handPose;
 let hands = [];
 let handReady = false;
 let handError = false;
 let handUpdatedAt = 0;
 let handStates = new Map();
-let handPanel, handPreview, handLabel;
+let handPanel, handPreview;
 const HAND_CHAINS = [[0,1,2,3,4], [0,5,6,7,8], [0,9,10,11,12],
   [0,13,14,15,16], [0,17,18,19,20], [5,9,13,17]];
-
-async function startHandTracking() {
-  try {
-    handPose = await ml5.handPose({ maxHands: 2 });
-    handPose.detectStart(video, gotHands);
-    handReady = true;
-  } catch (error) {
-    console.error("Could not load HandPose:", error);
-    handError = true;
-  }
-}
 
 function pointDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -401,6 +351,7 @@ function classifyGestureFeatures(fingers, pinched) {
   if (index && !middle && !ring && !pinky) return "食指指向 / Point";
   return "其他手势 / Other";
 }
+// 按手掌尺度和关节夹角判断手势，减小距离、旋转的影响。
 function classifyHand(points) {
   if (!points || points.length < 21) return "其他手势 / Other";
   const palm = Math.max(pointDistance(points[0], points[9]), 1);
@@ -408,7 +359,6 @@ function classifyHand(points) {
     jointAngle(points[base], points[base + 1], points[base + 3]) > 150 &&
     pointDistance(points[base + 3], points[0]) > pointDistance(points[base + 1], points[0]) * 1.08
   );
-  // Palm-relative distances work at different camera distances and hand rotations.
   const pinched = pointDistance(points[4], points[8]) / palm < 0.28
     && pointDistance(points[8], points[0]) / palm > 1.05;
   return classifyGestureFeatures(fingers, pinched);
@@ -428,25 +378,24 @@ function gotHands(results) {
     else { state.candidate = gesture; state.count = 1; }
     if (state.count >= 2) state.label = gesture;
     handStates.set(id, state);
-    return { ...hand, gesture: state.label };
+    const action = state.count < 2 ? 0
+      : gesture === "食指指向 / Point" && isIndexRaised(hand.keypoints) ? 1
+      : gesture === "张开手掌 / Palm" ? -1 : 0;
+    return { ...hand, gesture: state.label, action };
   });
   for (const id of handStates.keys()) if (!active.has(id)) handStates.delete(id);
+  if (hands.some(hand => hand.action === -1)) putDownProps();
+  else if (hands.some(hand => hand.action === 1)) microphone.raised = true;
 }
 function createHandPanel() {
   handPanel = document.createElement("aside");
   handPanel.setAttribute("aria-label", "手势实验预览");
-  handPanel.style.cssText = "position:fixed;right:12px;top:12px;z-index:5;width:min(320px,45vw);padding:8px;border-radius:12px;background:rgba(30,25,40,.88);color:white;font:13px/1.5 Arial,sans-serif;box-shadow:0 4px 20px #0003";
-  const title = document.createElement("div");
-  title.textContent = "手势实验 · H 隐藏/显示";
+  handPanel.style.cssText = "position:fixed;right:12px;top:12px;z-index:5;width:min(320px,45vw)";
   handPreview = document.createElement("canvas");
   handPreview.width = 320;
   handPreview.height = 240;
-  // Keep this preview independent of the large avatar canvas CSS.
-  handPreview.style.cssText = "display:block;width:100%;height:auto;border-radius:6px;margin:6px 0";
-  handLabel = document.createElement("div");
-  handLabel.setAttribute("role", "status");
-  handLabel.textContent = "正在加载 HandPose…";
-  handPanel.append(title, handPreview, handLabel);
+  handPreview.style.cssText = "display:block;width:100%;height:auto";
+  handPanel.append(handPreview);
   document.body.append(handPanel);
 }
 function drawHandPreview() {
@@ -476,8 +425,180 @@ function drawHandPreview() {
     }
   }
   ctx.restore();
-  handLabel.textContent = handError ? "手部模型加载失败，请检查网络并刷新。"
-    : !handReady ? "正在加载 HandPose…"
-    : !visibleHands.length ? "把手放到镜头前：张掌 / 握拳 / 剪刀手 / 指向 / 捏合"
-    : visibleHands.map((hand, i) => `手 ${i + 1}：${hand.gesture}`).join(" · ");
+}
+
+function updateGaze(points) {
+  if (points.length < 478) { gaze.x = 0; gaze.y = 0; return; }
+  const readings = [[468,33,133,159,145], [473,362,263,386,374]].map(ids => {
+    const [iris, a, b, top, bottom] = ids.map(id => points[id]);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const span = Math.max(Math.hypot(dx, dy), 1);
+    const ux = dx / span, uy = dy / span;
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+    const eyeHeight = Math.max(Math.hypot(top.x - bottom.x, top.y - bottom.y), 1);
+    return {
+      x: ((iris.x - cx) * ux + (iris.y - cy) * uy) / span,
+      y: ((iris.x - (top.x + bottom.x) / 2) * -uy
+        + (iris.y - (top.y + bottom.y) / 2) * ux) / eyeHeight
+    };
+  });
+  const horizontal = (readings[0].x + readings[1].x) / 2;
+  const vertical = (readings[0].y + readings[1].y) / 2;
+  gaze.x = lerp(gaze.x, constrain(horizontal * (MIRROR_TRACKING ? -120 : 120), -24, 24), 0.45);
+  gaze.y = lerp(gaze.y, constrain(vertical * 16, -12, 12), 0.45);
+}
+
+// 眼珠仅在视线变化时重绘，并以眼白透明度裁切。
+function drawPupils() {
+  const white = artwork.layers.eyeWhite;
+  const pupils = artwork.layers.pupils;
+  drawArtLayer("eyeWhite", true);
+  if (pupilCache.x !== gaze.x || pupilCache.y !== gaze.y) {
+    pupilBuffer.clear();
+    pupilBuffer.push();
+    pupilBuffer.scale(RENDER_SCALE);
+    pupilBuffer.image(avatarImages.pupils,
+      pupils.x - white.x + gaze.x, pupils.y - white.y + gaze.y,
+      pupils.width, pupils.height);
+    pupilBuffer.drawingContext.globalCompositeOperation = "destination-in";
+    pupilBuffer.image(avatarImages.eyeWhite, 0, 0, white.width, white.height);
+    pupilBuffer.drawingContext.globalCompositeOperation = "source-over";
+    pupilBuffer.pop();
+    pupilCache = { x: gaze.x, y: gaze.y };
+  }
+  push();
+  rotateHead();
+  image(pupilBuffer, white.x, white.y, white.width, white.height);
+  pop();
+}
+
+// 用眼角作为眉毛参照，避免眨眼被误算为皱眉。
+function getBrowMetrics(points) {
+  const left = points[33], right = points[263];
+  const dx = right.x - left.x, dy = right.y - left.y;
+  const span = Math.max(Math.hypot(dx, dy), 1);
+  let nx = -dy / span, ny = dx / span;
+  if (nx * (points[152].x - points[10].x) + ny * (points[152].y - points[10].y) < 0) {
+    nx = -nx; ny = -ny;
+  }
+  const vertical = (a, b) => (a.x - b.x) * nx + (a.y - b.y) * ny;
+  const distance = (a, b) => Math.max(pointDistance(a, b), 1);
+  const leftSpan = distance(points[33], points[133]);
+  const rightSpan = distance(points[362], points[263]);
+  return {
+    height: (vertical({x:(points[33].x+points[133].x)/2, y:(points[33].y+points[133].y)/2}, points[105]) / leftSpan
+      + vertical({x:(points[362].x+points[263].x)/2, y:(points[362].y+points[263].y)/2}, points[334]) / rightSpan) / 2,
+    innerGap: distance(points[107], points[336]) / span
+  };
+}
+
+function classifyBrows(height, contraction, previous) {
+  if (height > (previous === "browsRaised" ? 0.020 : 0.035)) return "browsRaised";
+  const lowering = previous === "browsSad" ? -0.030 : -0.050;
+  const tightening = previous === "browsSad" ? 0.018 : 0.030;
+  if (height < lowering && contraction > tightening) return "browsSad";
+  return "browsNeutral";
+}
+
+// 自动采样 1.5 秒；正常眉立即恢复，表情连续确认后再切换。
+function updateBrows(points) {
+  const metrics = getBrowMetrics(points);
+  if (!Number.isFinite(metrics.height) || !Number.isFinite(metrics.innerGap)) return;
+  if (!browBaseline) {
+    browExpression = "browsNeutral";
+    if (browCalibrationStart === null) browCalibrationStart = millis();
+    browSamples.push(metrics);
+    if (millis() - browCalibrationStart >= 1500 && browSamples.length >= 15) {
+      browBaseline = { height: median(browSamples, "height"), innerGap: median(browSamples, "innerGap") };
+    }
+    return;
+  }
+  const candidate = classifyBrows(
+    metrics.height - browBaseline.height,
+    browBaseline.innerGap - metrics.innerGap,
+    browExpression
+  );
+  if (candidate === browCandidate) browCandidateFrames++;
+  else { browCandidate = candidate; browCandidateFrames = 1; }
+  const requiredFrames = candidate === "browsSad" ? 3 : 2;
+  if (candidate === "browsNeutral" || browCandidateFrames >= requiredFrames) browExpression = candidate;
+}
+
+function getHairRoot() {
+  return artwork.hairPivot || { x: 1470, y: 850 };
+}
+function getHairRootScreenX() {
+  const root = getHairRoot(), pivot = artwork.headPivot;
+  const dx = root.x - pivot.x, dy = root.y - pivot.y;
+  return avatar.x + avatar.scale * (pivot.x - artwork.anchor.x
+    + Math.cos(avatar.angle) * dx - Math.sin(avatar.angle) * dy);
+}
+// 后发保持下垂，只保留小幅惯性
+function updateHairPhysics() {
+  const now = millis() / 1000, rootX = getHairRootScreenX();
+  const dt = hairMotion.time === null ? 0 : now - hairMotion.time;
+  if (dt > 0 && dt < 0.2) {
+    const sway = constrain((rootX - hairMotion.rootX) / dt * 0.00004, -0.035, 0.035);
+    const target = constrain(avatar.angle * 0.35 + sway, -0.16, 0.16);
+    hairMotion.angle = lerp(hairMotion.angle, target, 1 - Math.exp(-HAIR_DAMPING * dt));
+  }
+  hairMotion.time = now;
+  hairMotion.rootX = rootX;
+}
+// 先连接到头部，再围绕发根反向抵消歪头角度。
+function drawGravityHair() {
+  const root = getHairRoot();
+  const layer = artwork.layers.backHair;
+  push();
+  rotateHead();
+  translate(root.x, root.y);
+  rotate(hairMotion.angle - avatar.angle);
+  translate(-root.x, -root.y);
+  image(avatarImages.backHair, layer.x, layer.y, layer.width, layer.height);
+  pop();
+}
+
+function median(samples, field) {
+  const values = samples.map(sample => sample[field]).sort((a, b) => a - b);
+  const mid = Math.floor(values.length / 2);
+  return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+}
+
+function rotateHead() {
+  const { x, y } = artwork.headPivot;
+  translate(x, y);
+  rotate(avatar.angle);
+  translate(-x, -y);
+}
+
+// 道具触发后保持；张开五指统一收回，后续道具也放入 props。
+function putDownProps() {
+  for (const prop of Object.values(props)) prop.raised = false;
+}
+function isIndexRaised(points) {
+  const dx = points[8].x - points[5].x;
+  const up = points[5].y - points[8].y;
+  return up > pointDistance(points[0], points[9]) * 0.45 && Math.abs(dx) < up * 0.8;
+}
+function updateMicrophone() {
+  const now = millis() / 1000;
+  const dt = microphone.time === null ? 0 : Math.min(now - microphone.time, 0.05);
+  const target = microphone.raised ? 1 : 0;
+  microphone.progress = lerp(microphone.progress, target, 1 - Math.exp(-10 * dt));
+  if (Math.abs(target - microphone.progress) < 0.001) microphone.progress = target;
+  microphone.time = now;
+}
+function drawMicrophone() {
+  if (microphone.progress === 0) return;
+  const layer = artwork.layers.microphone;
+  const { width, height } = artwork.canvas;
+  // 进入位置和裁切范围都使用人物的 PSD 画布，与屏幕尺寸无关。
+  const travel = height - layer.y + 40;
+  drawingContext.save();
+  drawingContext.beginPath();
+  drawingContext.rect(0, 0, width, height);
+  drawingContext.clip();
+  image(avatarImages.microphone, layer.x, layer.y + travel * (1 - microphone.progress),
+    layer.width, layer.height);
+  drawingContext.restore();
 }
