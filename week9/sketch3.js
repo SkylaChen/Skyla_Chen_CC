@@ -88,7 +88,7 @@ async function setup() {
     pupilBuffer.pixelDensity(1);
   } catch (error) {
     console.error("Could not load avatar artwork:", error);
-    setStatus("素材加载失败：" + error.message);
+    setStatus("Artwork failed to load: " + error.message);
     artError = true;
     return;
   }
@@ -129,7 +129,7 @@ function gotFaces(results) {
 function draw() {
   background(248, 246, 250);
   if (artError) return;
-  if (!artwork || !avatarImages.frontHair) return setStatus("加载立绘…");
+  if (!artwork || !avatarImages.frontHair) return setStatus("Loading artwork...");
   const points = faces[0]?.keypoints;
   if (points?.length >= 468) updateAvatar(points);
   try {
@@ -137,10 +137,10 @@ function draw() {
     updateHairPhysics();
     updateMicrophone();
     drawAvatar();
-    setStatus(loadError ? "人脸追踪加载失败" : !modelReady ? "加载人脸追踪…"
-      : !points?.length ? "请面对摄像头" : !mouth.baseline || !browBaseline ? "请放松表情，自动校准中…" : "");
+    setStatus(loadError ? "Face tracking failed to load" : !modelReady ? "Loading face tracking..."
+      : !points?.length ? "Please face the camera" : !mouth.baseline || !browBaseline ? "Relax your face. Calibrating..." : "");
   } catch (error) {
-    setStatus("绘制失败：" + error.message);
+    setStatus("Rendering failed: " + error.message);
     console.error(error);
   }
   drawHandPreview();
@@ -344,16 +344,16 @@ function jointAngle(a, b, c) {
 }
 function classifyGestureFeatures(fingers, pinched) {
   const [index, middle, ring, pinky] = fingers;
-  if (pinched) return "捏合 / Pinch";
-  if (index && middle && ring && pinky) return "张开手掌 / Palm";
-  if (!index && !middle && !ring && !pinky) return "握拳 / Fist";
-  if (index && middle && !ring && !pinky) return "剪刀手 / Peace";
-  if (index && !middle && !ring && !pinky) return "食指指向 / Point";
-  return "其他手势 / Other";
+  if (pinched) return "Pinch";
+  if (index && middle && ring && pinky) return "Palm";
+  if (!index && !middle && !ring && !pinky) return "Fist";
+  if (index && middle && !ring && !pinky) return "Peace";
+  if (index && !middle && !ring && !pinky) return "Point";
+  return "Other";
 }
 // 按手掌尺度和关节夹角判断手势，减小距离、旋转的影响。
 function classifyHand(points) {
-  if (!points || points.length < 21) return "其他手势 / Other";
+  if (!points || points.length < 21) return "Other";
   const palm = Math.max(pointDistance(points[0], points[9]), 1);
   const fingers = [5,9,13,17].map(base =>
     jointAngle(points[base], points[base + 1], points[base + 3]) > 150 &&
@@ -373,14 +373,14 @@ function gotHands(results) {
     active.add(id);
     const gesture = classifyHand(hand.keypoints);
     let state = handStates.get(id);
-    if (!state) state = { candidate: gesture, count: 0, label: "识别中…" };
+    if (!state) state = { candidate: gesture, count: 0, label: "Detecting..." };
     if (state.candidate === gesture) state.count++;
     else { state.candidate = gesture; state.count = 1; }
     if (state.count >= 2) state.label = gesture;
     handStates.set(id, state);
     const action = state.count < 2 ? 0
-      : gesture === "食指指向 / Point" && isIndexRaised(hand.keypoints) ? 1
-      : gesture === "张开手掌 / Palm" ? -1 : 0;
+      : gesture === "Point" && isIndexRaised(hand.keypoints) ? 1
+      : gesture === "Palm" ? -1 : 0;
     return { ...hand, gesture: state.label, action };
   });
   for (const id of handStates.keys()) if (!active.has(id)) handStates.delete(id);
@@ -389,7 +389,7 @@ function gotHands(results) {
 }
 function createHandPanel() {
   handPanel = document.createElement("aside");
-  handPanel.setAttribute("aria-label", "手势实验预览");
+  handPanel.setAttribute("aria-label", "Camera preview");
   handPanel.style.cssText = "position:fixed;right:12px;top:12px;z-index:5;width:min(320px,45vw)";
   handPreview = document.createElement("canvas");
   handPreview.width = 320;
